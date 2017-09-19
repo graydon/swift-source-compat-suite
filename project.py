@@ -13,6 +13,7 @@
 
 """A library containing common project building functionality."""
 
+import argparse
 import os
 import platform
 import re
@@ -220,7 +221,7 @@ def build_swift_package(path, swiftc, configuration, sandbox_profile,
                              'swift-3.1-branch']):
         command.insert(2, '--disable-sandbox')
     if added_swift_flags is not None:
-        for flag in added_swift_flags.split():
+        for flag in ' '.join(added_swift_flags).split():
             command += ["-Xswiftc", flag]
     return common.check_execute(command, timeout=3600,
                                 sandbox_profile=sandbox_profile,
@@ -240,7 +241,7 @@ def test_swift_package(path, swiftc, sandbox_profile,
     env['SWIFT_EXEC'] = swiftc
     command = [swift, 'test', '-C', path, '--verbose']
     if added_swift_flags is not None:
-        for flag in added_swift_flags.split():
+        for flag in ' '.join(added_swift_flags).split():
             command += ["-Xswiftc", flag]
     if (swift_branch not in ['swift-3.0-branch',
                              'swift-3.1-branch']):
@@ -322,7 +323,7 @@ def dispatch(root_path, repo, action, swiftc, swift_version,
             other_swift_flags += ['-swift-version', swift_version]
             build_settings['SWIFT_VERSION'] = swift_version
         if added_swift_flags:
-            other_swift_flags.append(added_swift_flags)
+            other_swift_flags += added_swift_flags
         if other_swift_flags:
             other_swift_flags = ['$(OTHER_SWIFT_FLAGS)'] + other_swift_flags
             build_settings['OTHER_SWIFT_FLAGS'] = ' '.join(other_swift_flags)
@@ -369,6 +370,18 @@ def is_xfailed(xfail_args, compatible_version, platform, swift_branch):
     if platform in xfail.get('platform', {}):
         return xfail['platform'][platform].split()[0]
     return None
+
+
+# Helper argparse Action to implement --build-config abbreviations
+class BuildConfigAction(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        if values == 'wmo-onone':
+            setattr(namespace, self.dest, 'release')
+            setattr(namespace, 'add_swift_flags',
+                    (getattr(namespace, 'add_swift_flags', [])
+                     + ['-wmo', '-Onone']))
+        else:
+            setattr(namespace, self.dest, values)
 
 
 def add_arguments(parser):
@@ -443,19 +456,24 @@ def add_arguments(parser):
                         help='test incremental-mode over multiple commits',
                         action='store_true')
     parser.add_argument("--add-swift-flags",
+                        action='append',
                         metavar="FLAGS",
                         help='add flags to each Swift invocation',
-                        default='')
+                        default=[])
     parser.add_argument("--skip-clean",
                         help='skip all git and build clean steps before '
                              'building projects',
                         action='store_true'),
     parser.add_argument("--build-config",
                         metavar="NAME",
-                        choices=['debug', 'release'],
+                        choices=['debug', 'release', 'wmo-onone'],
                         dest='build_config',
+                        action=BuildConfigAction,
                         help='specify "debug" or "release" to override '
-                             'the build configuration in the projects.json file')
+                        'the build configuration in the projects.json file'
+                        ' ("wmo-onone" is short for "release" combined with '
+                        ' --add-swift-flags="-wmo -Onone")')
+
 
 def add_minimal_arguments(parser):
     """Add common arguments to parser."""
